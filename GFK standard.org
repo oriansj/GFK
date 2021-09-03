@@ -5,18 +5,16 @@ inode structs are made up of 1 mandatory chunk and all optional chunks as enable
 |-------+--------------------+------------------+-----------|
 |     0 | leadblock defined  | block address    | no        |
 |     1 | superblock defined | checksum         | yes       |
-|     2 | superblock defined | previous version | yes       |
 
 * dnode
 dnodes structs are made up of 2 mandatory inode structs, 1 mandatory chunk and all optional chucks as enabled in the superblock.
 
-| chunk | size              | purpose                  | optional? |
-|-------+-------------------+--------------------------+-----------|
-|     0 | size of inode     | pointer to name          | no        |
-|     1 | size of inode     | pointer to contents      | no        |
-|     2 | leadblock defined | size of file             | no        |
-|     3 | leadblock defined | size of previous version | yes       |
-|     4 | size of inode     | pointer to metadata      | yes       |
+| chunk | size              | purpose                     | optional? |
+|-------+-------------------+-----------------------------+-----------|
+|     0 | size of inode     | pointer to name             | no        |
+|     1 | size of inode     | pointer to contents         | no        |
+|     2 | leadblock defined | size of file                | no        |
+|     3 | size of inode     | pointer to metadata         | yes       |
 
 * Blocks
 The filesystem is made up of blocks of a size defined in the leadblock.
@@ -88,9 +86,8 @@ the rest of the block is to be zero if it is greater than 64bytes.
 |  bit | feature                  | support required? |
 |------+--------------------------+-------------------|
 |    0 | filesystem checksuming   | no                |
-|    1 | filesystem versioning    | no                |
-|    2 | filesystem deduplication | no                |
-| 3-63 | reserved for future use  | no                |
+|    1 | filesystem deduplication | no                |
+| 2-63 | reserved for future use  | no                |
 
 *** checksum algorithm
 If checksumming support is enabled:
@@ -128,7 +125,7 @@ the inodes are the contents of the file itself
 | bytes | Contents | Default Value |
 |-------+----------+---------------|
 | 1     | Type tag |             3 |
-| rest  | dnodes   |             0 |
+| rest  | inodes   |             0 |
 
 the dnodes are the indirect directory and directory blocks needed to contain the contents of the folder.
 
