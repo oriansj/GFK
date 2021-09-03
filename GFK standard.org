@@ -1,73 +1,135 @@
-* Pairs
-** core
-Pairs are a block of 8bytes.
-4bytes for block address and 4bytes for checksum of the block
+* inode
+inode structs are made up of 1 mandatory chunk and all optional chunks as enabled in the superblock.
 
-If the superblock checksum flag is not turned on, the checksum value should be zero
+| chunk | size               | purpose          | optional? |
+|-------+--------------------+------------------+-----------|
+|     0 | leadblock defined  | block address    | no        |
+|     1 | superblock defined | checksum         | yes       |
+|     2 | superblock defined | previous version | yes       |
 
-*** Checksum algorithm
-uint32_t computeChecksum(const void *data, size_t size)
-{
-	uint32_t res = 0;
-	const uint32_t *d = static_cast<const uint32_t *>(data);
-	assert((size & (sizeof(uint32_t) - 1)) == 0);
-	size /= sizeof(uint32_t);
-	for (size_t i = 1; i != size; ++i)
-          res = (res << 31) + (res >> 1) + d[i];
-	return res;
-}
+* dnode
+dnodes structs are made up of 2 mandatory inode structs, 1 mandatory chunk and all optional chucks as enabled in the superblock.
 
-** Directory Pairs
-made up of 2 pairs.
-The first for the name and the second for the file block address.
-
-[block address][checksum] (block with filename)
-[block address][checksum] (block with file contents)
+| chunk | size              | purpose                  | optional? |
+|-------+-------------------+--------------------------+-----------|
+|     0 | size of inode     | pointer to name          | no        |
+|     1 | size of inode     | pointer to contents      | no        |
+|     2 | leadblock defined | size of file             | no        |
+|     3 | leadblock defined | size of previous version | yes       |
+|     4 | size of inode     | pointer to metadata      | yes       |
 
 * Blocks
-The filesystem is made up of 512byte blocks.
-The first pair of every block structure is its type.
+The filesystem is made up of blocks of a size defined in the leadblock.
+The first byte of every block structure is its type.
+(except for the leadblock and the superblock)
 
-| Value | Type               |
-|-------+--------------------|
-|     0 | Direct File        |
-|     1 | Indirect File      |
-|     2 | Directory          |
-|     3 | Indirect Directory |
+| Value | Type               | optional support? |
+|-------+--------------------+-------------------|
+|     0 | Direct File        | no                |
+|     1 | Indirect File      | no                |
+|     2 | Directory          | no                |
+|     3 | Indirect Directory | no                |
+|     4 | Metadata           | yes               |
+|     5 | Indirect Metadata  | yes               |
+|     6 | reserved           | yes               |
+|     7 | Indirect reserved  | yes               |
+
+** Leadblock
+To compenstate for hardware that doesn't make knowing the size of the drive simple
+the 2nd logical block is the leadblock.
+
+| chunk | size   | purpose                     | optional? | Default value          |
+|-------+--------+-----------------------------+-----------+------------------------|
+|     0 | 8bits  | encoding flags              | no        | 0/1 (see note)         |
+|     1 | 64bits | size of blocks              | no        | 0                      |
+|     2 | 64bits | block address of SuperBlock | no        | last block             |
+|     3 | 64bits | size of block pointer       | no        | architecture word size |
+|     3 | rest   | reserved chunk              | yes       | 0                      |
+
+*** encoding flags
+the bits of the encoding flags chunk must be interpreted in big bit endian fashion.
+note middle or other endianess are not supported.
+bits 2-7 are reserved for future changes to the leadblock format;
+indicated by 0 being version 0 and increasing numbers indicating newer leadblock formats..
+
+| bit | purpose        | value 0         | value 1            |
+|-----+----------------+-----------------+--------------------|
+|   0 | word endianess | Big byte endian | Little byte endian |
+|   1 | bit endianess  | Big bit endian  | Little bit endian  |
+| 2-7 | reserved       | reserved        | reserved           |
+
+*** block size
+blocks must be atleast 64bytes in size or the size of 4 dnodes; whichever is larger.
+block size is expressed as a number of bytes.
+
+*** size of block pointer
+block pointers must be a multiple of bytes.
+block pointer size is expressed as a number of bytes.
+Common values are 2, 4 and 8 corresponding to 16bit, 32bit and 64bit pointers.
+However the value can be up to (2^64)-1
 
 ** Superblock
 The superblock is located at the last logical block.
-To compenstate for hardware that doesn't make knowing the size of the drive simple, the 2nd logical block just stores the block address of the superblock.
 
 Each piece is 64bits long (8bytes)
-| Piece | Contents                | Default value            |
-|-------+-------------------------+--------------------------|
-|     0 | SuperBlock HEADER       | 0x4B4E494748542121       |
-|     1 | Core Feature Flags      | if zero all features OFF |
-|     2 | ROOT pair               | N/A                      |
-|  3-63 | Reserved for future use | N/A                      |
+| Piece | Contents           | optional? |            Default value |
+|-------+--------------------+-----------+--------------------------|
+|     0 | SuperBlock HEADER  | no        |       0x4B4E494748542121 |
+|     1 | Core Feature Flags | no        | if zero all features OFF |
+|     2 | checksum algorithm | yes       |                        0 |
+|     3 | checksum size      | yes       |                        0 |
+|     4 | ROOT pair          | no        |                      N/A |
+|   5-? | optional checksum  | yes       |                        0 |
 
-** Indirect Directory blocks
-| Piece | Contents                                                   | Default Value |
-|-------+------------------------------------------------------------+---------------|
-| 0     | Type tag                                                   |             3 |
-| 1 -63 | pointers to directory blocks and indirect directory blocks |             0 |
+as one can not expect the block size to be larger than 64bytes,
+the rest of the block is to be zero if it is greater than 64bytes.
+
+*** Feature flags
+|  bit | feature                  | support required? |
+|------+--------------------------+-------------------|
+|    0 | filesystem checksuming   | no                |
+|    1 | filesystem versioning    | no                |
+|    2 | filesystem deduplication | no                |
+| 3-63 | reserved for future use  | no                |
+
+*** checksum algorithm
+If checksumming support is enabled:
+all inodes must include a checksum field containing the checksum of the block being addressed.
+
+| value | name | support required? |
 
 ** Directory blocks
-| Piece | Contents                                               | Default Value |
-|-------+--------------------------------------------------------+---------------|
-|     0 | Type tag                                               |             2 |
-|     1 | Reserved                                               |             0 |
-|  2-63 | Directory pairs for the files/folders in the directory |             0 |
+| bytes | Contents | Default Value |
+|-------+----------+---------------|
+| 1     | Type tag |             2 |
+| rest  | dnodes   |             0 |
 
-** Indirect file block
-| Piece | Contents                                                        | Default Value |
-|-------+-----------------------------------------------------------------+---------------|
-|     0 | Type tag                                                        |             1 |
-|  1-63 | pointers to file and indirect file blocks for the file contents |             0 |
+the dnodes are the files and folders within the directory.
 
 ** file block
-| Piece | Contents                      | Default Value |
-|-------+-------------------------------+---------------|
-|     0 | Type tag                      |             3 |
-|  1-63 | pointers to the file contents |             0 |
+| bytes | Contents | Default Value |
+|-------+----------+---------------|
+| 1     | Type tag |             0 |
+| rest  | inodes   |             0 |
+
+the inodes are the contents of the file itself
+
+** Indirect Directory blocks
+| bytes | Contents | Default Value |
+|-------+----------+---------------|
+| 1     | Type tag |             3 |
+| rest  | dnodes   |             0 |
+
+the dnodes are the indirect directory and directory blocks needed to contain the contents of the folder.
+
+** Indirect file block
+| bytes | Contents | Default Value |
+|-------+----------+---------------|
+| 1     | Type tag |             1 |
+| rest  | inodes   |             0 |
+
+the indoes are the indirect file and file blocks needed to contain the contents of the file.
+
+** name blocks
+file names are null terminated and limited to the block size -1
+file names can not contain null characters or forward slashes (/)
