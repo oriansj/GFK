@@ -127,7 +127,7 @@ the inodes are the contents of the file itself
 | 1     | Type tag |             3 |
 | rest  | inodes   |             0 |
 
-the dnodes are the indirect directory and directory blocks needed to contain the contents of the folder.
+the inodes are the indirect directory and directory blocks needed to contain the contents of the folder.
 
 ** Indirect file block
 | bytes | Contents | Default Value |
