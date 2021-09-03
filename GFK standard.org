@@ -96,7 +96,17 @@ the rest of the block is to be zero if it is greater than 64bytes.
 If checksumming support is enabled:
 all inodes must include a checksum field containing the checksum of the block being addressed.
 
-| value | name | support required? |
+| value | name         | support required? |
+|-------+--------------+-------------------|
+|     0 | BSD checksum | yes               |
+|     1 | MD5          | no                |
+|     2 | SHA-0        | no                |
+|     3 | SHA-1        | no                |
+|     4 | SHA-2        | no                |
+|     5 | SHA-3        | no                |
+
+*** checksum size
+checksum size is expressed as a number of bits.
 
 ** Directory blocks
 | bytes | Contents | Default Value |
