@@ -9,12 +9,16 @@ inode structs are made up of 1 mandatory chunk and all optional chunks as enable
 * dnode
 dnodes structs are made up of 2 mandatory inode structs, 1 mandatory chunk and all optional chucks as enabled in the superblock.
 
-| chunk | size              | purpose                     | optional? |
-|-------+-------------------+-----------------------------+-----------|
-|     0 | size of inode     | pointer to name             | no        |
-|     1 | size of inode     | pointer to contents         | no        |
-|     2 | leadblock defined | size of file                | no        |
-|     3 | size of inode     | pointer to metadata         | yes       |
+| chunk | size              | purpose               | optional? |
+|-------+-------------------+-----------------------+-----------|
+|     0 | size of inode     | pointer to name       | no        |
+|     1 | size of inode     | pointer to contents   | no        |
+|     2 | leadblock defined | size of file in bytes | no        |
+|     3 | size of inode     | pointer to metadata   | yes       |
+
+chunk 2 is to be interpreted to mean:
+if pointing to a file/Indirect File: the size of that file in bytes
+if anything else: ZERO to simplify bootstrapping implementations.
 
 * Blocks
 The filesystem is made up of blocks of a size defined in the leadblock.
