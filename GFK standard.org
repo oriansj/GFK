@@ -1,3 +1,19 @@
+# Copyright (C) 2022 Jeremiah Orians
+# This file is part of GFK
+#
+# GFK is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# GFK is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with GFK If not, see <http://www.gnu.org/licenses/>.
+
 * inode
 inode structs are made up of 1 mandatory chunk and all optional chunks as enabled in the superblock.
 
@@ -62,8 +78,9 @@ All reserved bytes are to be zero.
 |     1 | 64bits | size of blocks              | no        | 4096                     |
 |     2 | 64bits | size of block pointer       | no        | architecture word size   |
 |     3 | 64bits | size of file size           | no        | 4                        |
-|     2 | 64bits | block address of SuperBlock | no        | last block (see section) |
-|     3 | rest   | reserved chunk              | yes       | 0                        |
+|     4 | 64bits | block address of SuperBlock | no        | last block (see section) |
+|     5 | 64bits | Native block size           | no        | (see note)               |
+|     6 | rest   | reserved chunk              | yes       | 0                        |
 
 *** encoding flags
 the bits of the encoding flags chunk must be interpreted in big bit endian fashion.
@@ -86,6 +103,17 @@ blocks must be atleast 64bytes in size or the size of 4 dnodes; whichever is lar
 block size is expressed as a number of bytes.
 
 The Default block size is 4096Bytes
+
+*** Native block size
+This is the native block size for the device the filesystem is on.
+Common values are 512bytes and 4096 bytes
+
+If the native block size is larger than the block size and the packed feature is
+not enabled, then the block will only contain a single block wasting space.
+
+If the native block size is smaller than the block size; then as many blocks in
+a row are leveraged. If the block size is not a multiple of the native block size
+then excess native blocks will be allocated and the space will be wasted.
 
 *** size of block pointer
 block pointers must be a multiple of bytes.
@@ -139,45 +167,89 @@ all inodes must include a checksum field containing the checksum of the block be
 
 | value | name         | support required? |
 |-------+--------------+-------------------|
-|     0 | BSD checksum | yes               |
-|     1 | MD5          | no                |
-|     2 | SHA-0        | no                |
+|     0 | NULL         | yes               |
+|     1 | BSD checksum | yes               |
+|     2 | MD5          | no                |
 |     3 | SHA-1        | no                |
 |     4 | SHA-2        | no                |
-|     5 | SHA-3        | no                |
+
+**** NULL
+The null algorithm is to populate the field with just the value zero.
+Tools *SHOULD NOT* create filesystems with this standard but must support reading
+filesystems that do use it.
+
+**** BSD checksum
+The checksum is to be defined as:
+
+checksum checksumblock(char* block, int volume_block_size, int mask)
+{
+	int checksum = 0;
+	int i = 0;
+	int ch;
+
+	while (i < volume_block_size)
+	{
+		ch = block[i];
+		checksum = (checksum >> 1) + ((checksum & 1) << 15);
+		checksum += ch;
+		checksum &= mask;
+		i += 1;
+	}
+	return checksum;
+}
+
+where a 16bit version would have a mask of 0xFFFF
+a 32bit version would have a mask of 0xFFFFFFFF
+a 64bit version wold have a mask of 0xFFFFFFFFFFFFFFFF
 
 *** checksum size
 checksum size is expressed as a number of bits.
 
+| checksum     | size | support required? |
+|--------------+------+-------------------|
+| NULL         |  ANY | yes               |
+| BSD Checksum |   16 | yes               |
+| BSD Checksum |   32 | yes               |
+| BSD Checksum |   64 | no                |
+| MD5          |  128 | no                |
+| SHA-1        |  160 | no                |
+| SHA-2        |  224 | no                |
+| SHA-2        |  256 | no                |
+| SHA-2        |  384 | no                |
+| SHA-2        |  512 | no                |
+
+all other checksum algorithm and size combos
+are not considered valid.
+
 ** Directory blocks
 | bytes | Contents | Default Value |
 |-------+----------+---------------|
-| 1     | Type tag |             2 |
-| rest  | dnodes   |             0 |
+| 1     | Type tag | 0b00000010    |
+| rest  | dnodes   | 0             |
 
 the dnodes are the files and folders within the directory.
 
 ** file block
 | bytes | Contents | Default Value |
 |-------+----------+---------------|
-| 1     | Type tag |             0 |
-| rest  | inodes   |             0 |
+| 1     | Type tag | 0b00000100    |
+| rest  | inodes   | 0             |
 
 the inodes are the contents of the file itself
 
 ** Indirect Directory blocks
 | bytes | Contents | Default Value |
 |-------+----------+---------------|
-| 1     | Type tag |             3 |
-| rest  | inodes   |             0 |
+| 1     | Type tag | 0b00000011    |
+| rest  | inodes   | 0             |
 
 the inodes are the indirect directory and directory blocks needed to contain the contents of the folder.
 
 ** Indirect file block
 | bytes | Contents | Default Value |
 |-------+----------+---------------|
-| 1     | Type tag |             1 |
-| rest  | inodes   |             0 |
+| 1     | Type tag | 0b00000101    |
+| rest  | inodes   | 0             |
 
 the indoes are the indirect file and file blocks needed to contain the contents of the file.
 
