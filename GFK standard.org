@@ -22,6 +22,7 @@ if anything else: ZERO to simplify bootstrapping implementations.
 
 * Blocks
 The filesystem is made up of blocks of a size defined in the leadblock.
+
 The first byte of every block structure is its type.
 (except for the leadblock and the superblock)
 
@@ -37,32 +38,54 @@ The first byte of every block structure is its type.
 |     7 | Indirect reserved  | yes               |
 
 ** Leadblock
-To compenstate for hardware that doesn't make knowing the size of the drive simple
-the 2nd logical block is the leadblock.
+To compenstate for hardware that doesn't make knowing the size of the drive simple.
 
-| chunk | size   | purpose                     | optional? | Default value          |
-|-------+--------+-----------------------------+-----------+------------------------|
-|     0 | 8bits  | encoding flags              | no        | 0/1 (see note)         |
-|     1 | 64bits | size of blocks              | no        | 0                      |
-|     2 | 64bits | block address of SuperBlock | no        | last block             |
-|     3 | 64bits | size of block pointer       | no        | architecture word size |
-|     3 | rest   | reserved chunk              | yes       | 0                      |
+the 2rd native logical block is the leadblock.
+
+For example if the hardware default block size is 256bytes: the Leadblock would be
+found exactly after 256bytes from the start of the disk (regardless what the block
+size is for the GFK filesystem according to the leadblock)
+
+The Leadblock size is to be the larger of the following:
+64Bytes in size
+or
+the size of the native logical block size of the storage medium it is upon
+
+(if native logical block size is 1byte; use 64bytes)
+(if native logical block size is 1MB; use 1MB)
+
+All reserved bytes are to be zero.
+
+| chunk | size   | purpose                     | optional? | Default value            |
+|-------+--------+-----------------------------+-----------+--------------------------|
+|     0 | 64bits | encoding flags              | no        | 0/1 (see note)           |
+|     1 | 64bits | size of blocks              | no        | 4096                     |
+|     2 | 64bits | size of block pointer       | no        | architecture word size   |
+|     3 | 64bits | size of file size           | no        | 4                        |
+|     2 | 64bits | block address of SuperBlock | no        | last block (see section) |
+|     3 | rest   | reserved chunk              | yes       | 0                        |
 
 *** encoding flags
 the bits of the encoding flags chunk must be interpreted in big bit endian fashion.
-note middle or other endianess are not supported.
-bits 2-7 are reserved for future changes to the leadblock format;
-indicated by 0 being version 0 and increasing numbers indicating newer leadblock formats..
+note middle or other endianess are not supported
+(and will never be supported)
 
-| bit | purpose        | value 0         | value 1            |
-|-----+----------------+-----------------+--------------------|
-|   0 | word endianess | Big byte endian | Little byte endian |
-|   1 | bit endianess  | Big bit endian  | Little bit endian  |
-| 2-7 | reserved       | reserved        | reserved           |
+All following data is to be interpreted according to the encoding order encoded here.
+
+bits 2-63 are to be used as an integer indicating the Leadblock format version number.
+This version of the specification is Leadblock formation version 0 and no newer formats
+currently exist.
+
+|  bit | purpose                  | value 0         | value 1            |
+|------+--------------------------+-----------------+--------------------|
+|    0 | word endianess           | Big byte endian | Little byte endian |
+|    1 | bit endianess            | Big bit endian  | Little bit endian  |
 
 *** block size
 blocks must be atleast 64bytes in size or the size of 4 dnodes; whichever is larger.
 block size is expressed as a number of bytes.
+
+The Default block size is 4096Bytes
 
 *** size of block pointer
 block pointers must be a multiple of bytes.
@@ -70,13 +93,27 @@ block pointer size is expressed as a number of bytes.
 Common values are 2, 4 and 8 corresponding to 16bit, 32bit and 64bit pointers.
 However the value can be up to (2^64)-1
 
+*** size of file size
+the size of the file size dnode segment must be a multiple of bytes.
+size of the file size is expressed as a number of bytes.
+Common values are 2, 4 and 8 corresponding to 16bit, 32bit and 64bit file size dnode
+segment sizes.
+However the value can be up to (2^64) -1
+
 ** Superblock
-The superblock is located at the last logical block.
+The superblock can be located anywhere on the disk *AFTER* the leadblock.
+HOWEVER if the Superblock is being made manually it is to be located at the last
+logical block of the filesystem.
+
+if The Superblock isn't located in the last logical block of the filesystem then,
+the last logical block of the filesystem will be reserved in the event that a user
+needs to manually replace the Superblock or for tools to build a replacement
+Superblock without fear of overwriting any data.
 
 Each piece is 64bits long (8bytes)
 | Piece | Contents           | optional? |            Default value |
 |-------+--------------------+-----------+--------------------------|
-|     0 | SuperBlock HEADER  | no        |       0x4B4E494748542121 |
+|     0 | SuperBlock HEADER  | no        |       0x4B4E49474854210A |
 |     1 | Core Feature Flags | no        | if zero all features OFF |
 |     2 | checksum algorithm | yes       |                        0 |
 |     3 | checksum size      | yes       |                        0 |
@@ -85,6 +122,9 @@ Each piece is 64bits long (8bytes)
 
 as one can not expect the block size to be larger than 64bytes,
 the rest of the block is to be zero if it is greater than 64bytes.
+
+The Superblock header is to *ALWAYS* be written in Big Endian order such that if
+viewed in a text editor it would appear as: KNIGHT!\n to the reader.
 
 *** Feature flags
 |  bit | feature                  | support required? |
