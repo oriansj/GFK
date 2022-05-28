@@ -25,12 +25,12 @@ inode structs are made up of 1 mandatory chunk and all optional chunks as enable
 * dnode
 dnodes structs are made up of 2 mandatory inode structs, 1 mandatory chunk and all optional chucks as enabled in the superblock.
 
-| chunk | size              | purpose               | optional? |
-|-------+-------------------+-----------------------+-----------|
-|     0 | size of inode     | pointer to name       | no        |
-|     1 | size of inode     | pointer to contents   | no        |
-|     2 | leadblock defined | size of file in bytes | no        |
-|     3 | size of inode     | pointer to metadata   | yes       |
+| chunk | size          | purpose               | optional? |
+|-------+---------------+-----------------------+-----------|
+|     0 | size of inode | pointer to name       | no        |
+|     1 | size of inode | pointer to contents   | no        |
+|     2 | 8 bytes       | size of file in bytes | no        |
+|     3 | size of inode | pointer to metadata   | yes       |
 
 chunk 2 is to be interpreted to mean:
 if pointing to a file/Indirect File: the size of that file in bytes
@@ -72,15 +72,15 @@ the size of the native logical block size of the storage medium it is upon
 
 All reserved bytes are to be zero.
 
-| chunk | size   | purpose                     | optional? | Default value            |
-|-------+--------+-----------------------------+-----------+--------------------------|
-|     0 | 64bits | encoding flags              | no        | 0/1 (see note)           |
-|     1 | 64bits | size of blocks              | no        | 4096                     |
-|     2 | 64bits | size of block pointer       | no        | architecture word size   |
-|     3 | 64bits | size of file size           | no        | 4                        |
-|     4 | 64bits | block address of SuperBlock | no        | last block (see section) |
-|     5 | 64bits | Native block size           | no        | (see note)               |
-|     6 | rest   | reserved chunk              | yes       | 0                        |
+| chunk | size      | purpose                     | optional? | Default value |
+|-------+-----------+-----------------------------+-----------+---------------|
+|     0 | 8bits     | encoding flags              | no        | (see note)    |
+|     1 | 16/32bits | block address of SuperBlock | no        | last block    |
+|     2 | 16/32bits | Block Count                 | no        | 0             |
+|     3 | rest      | reserved chunk              | yes       | 0             |
+
+the pointer to the block address of the SuperBlock is sized according to the size
+of the block pointer encoded in the encoding flags
 
 *** encoding flags
 the bits of the encoding flags chunk must be interpreted in big bit endian fashion.
@@ -89,67 +89,62 @@ note middle or other endianess are not supported
 
 All following data is to be interpreted according to the encoding order encoded here.
 
-bits 2-63 are to be used as an integer indicating the Leadblock format version number.
+bits 4-15 are to be used as an integer indicating the Leadblock format version number.
 This version of the specification is Leadblock formation version 0 and no newer formats
 currently exist.
 
-|  bit | purpose                  | value 0         | value 1            |
-|------+--------------------------+-----------------+--------------------|
-|    0 | word endianess           | Big byte endian | Little byte endian |
-|    1 | bit endianess            | Big bit endian  | Little bit endian  |
+| bit | purpose               | value 0         | value 1            |
+|-----+-----------------------+-----------------+--------------------|
+|   0 | word endianess        | Big byte endian | Little byte endian |
+|   1 | size of blocks        | 512 bytes       | 4096 bytes         |
+|   2 | size of block pointer | 16 bits         | 32 bits            |
+|   3 | Native sector size    | 512 bytes       | 4096 bytes         |
 
 *** block size
-blocks must be atleast 64bytes in size or the size of 4 dnodes; whichever is larger.
-block size is expressed as a number of bytes.
+We only support 2 possible block sizes at this time 512bytes or 4096bytes
+and which is to be used is indicated by the encoding flags.
 
-The Default block size is 4096Bytes
-
-*** Native block size
+*** Native sector size
 This is the native block size for the device the filesystem is on.
-Common values are 512bytes and 4096 bytes
+Currently the only supported values are 512bytes and 4096 bytes
 
-If the native block size is larger than the block size and the packed feature is
-not enabled, then the block will only contain a single block wasting space.
+If the native sector size is larger than the block size and the packed feature is
+not enabled, then the sector will only contain a single block wasting space.
 
-If the native block size is smaller than the block size; then as many blocks in
-a row are leveraged. If the block size is not a multiple of the native block size
-then excess native blocks will be allocated and the space will be wasted.
+If the native sector size is smaller than the block size; then multiple sectors
+will be grouped together to provide for a single block. If the block size is not
+a multiple of the native block size then excess native blocks will be allocated
+and the space will be wasted.
 
 *** size of block pointer
-block pointers must be a multiple of bytes.
-block pointer size is expressed as a number of bytes.
-Common values are 2, 4 and 8 corresponding to 16bit, 32bit and 64bit pointers.
-However the value can be up to (2^64)-1
+At this time only 16 and 32bit block pointers are supported.
 
 *** size of file size
-the size of the file size dnode segment must be a multiple of bytes.
-size of the file size is expressed as a number of bytes.
-Common values are 2, 4 and 8 corresponding to 16bit, 32bit and 64bit file size dnode
-segment sizes.
-However the value can be up to (2^64) -1
+the size of the file size dnode segment must be 64bits in size.
+
+*** Block count
+A value of zero means the partition has not been initialized and all blocks should
+be scrubbed on boot.
+
+Otherwise the Block count should be the number of blocks that can exist in the
+partition (including the leadblock and superblock)
 
 ** Superblock
-The superblock can be located anywhere on the disk *AFTER* the leadblock.
-HOWEVER if the Superblock is being made manually it is to be located at the last
-logical block of the filesystem.
-
-if The Superblock isn't located in the last logical block of the filesystem then,
-the last logical block of the filesystem will be reserved in the event that a user
-needs to manually replace the Superblock or for tools to build a replacement
-Superblock without fear of overwriting any data.
+The superblock *MUST* be located in the last logical block of the volume.
 
 Each piece is 64bits long (8bytes)
 | Piece | Contents           | optional? |            Default value |
 |-------+--------------------+-----------+--------------------------|
 |     0 | SuperBlock HEADER  | no        |       0x4B4E49474854210A |
 |     1 | Core Feature Flags | no        | if zero all features OFF |
-|     2 | checksum algorithm | yes       |                        0 |
-|     3 | checksum size      | yes       |                        0 |
-|     4 | ROOT pair          | no        |                      N/A |
-|   5-? | optional checksum  | yes       |                        0 |
+|     2 | checksum algorithm | no        |                        0 |
+|     3 | checksum size      | no        |                        0 |
+|     4 | ROOT inode         | no        |                      N/A |
+|     5 | FREE inode         | yes       |                        0 |
+|     6 | URB inode          | yes       |                        0 |
+|  rest | reserved           | yes       |                        0 |
 
-as one can not expect the block size to be larger than 64bytes,
-the rest of the block is to be zero if it is greater than 64bytes.
+The Reserved area of the Superblock *MUST* be zero
 
 The Superblock header is to *ALWAYS* be written in Big Endian order such that if
 viewed in a text editor it would appear as: KNIGHT!\n to the reader.
@@ -221,6 +216,16 @@ checksum size is expressed as a number of bits.
 all other checksum algorithm and size combos
 are not considered valid.
 
+** Free blocks
+Free blocks can be implemented as a hash tree or a simple linked list.
+The End block(s) *MUST* be entirely NULL bytes
+if implemented as a simple linked list, the rest of the block after the inode
+ *MUST* be zero.
+| bytes | Contents | Default Value |
+|-------+----------+---------------|
+| 1     | Type tag | 0b00000000    |
+| rest  | inodes   | 0             |
+
 ** Directory blocks
 | bytes | Contents | Default Value |
 |-------+----------+---------------|
@@ -243,7 +248,8 @@ the inodes are the contents of the file itself
 | 1     | Type tag | 0b00000011    |
 | rest  | inodes   | 0             |
 
-the inodes are the indirect directory and directory blocks needed to contain the contents of the folder.
+the inodes are the indirect directory and directory blocks needed to contain the
+contents of the folder.
 
 ** Indirect file block
 | bytes | Contents | Default Value |
@@ -251,7 +257,19 @@ the inodes are the indirect directory and directory blocks needed to contain the
 | 1     | Type tag | 0b00000101    |
 | rest  | inodes   | 0             |
 
-the indoes are the indirect file and file blocks needed to contain the contents of the file.
+the indoes are the indirect file and file blocks needed to contain the contents
+of the file.
+
+** Unreliable Sector block (URB)
+If certain blocks are unreliable, you can point to them and exclude them from
+future use. The NEXT block is used to create a linked list Unreliable Sector
+blocks.
+| bytes         | Contents        | Default Value |
+|---------------+-----------------+---------------|
+| 1             | Type tag        |    0b11111111 |
+| sizeof(inode) | NEXT block      |             0 |
+| rest          | block addresses |             0 |
+
 
 ** name blocks
 file names are null terminated and limited to the block size -1
